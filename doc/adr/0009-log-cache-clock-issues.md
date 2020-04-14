@@ -27,17 +27,22 @@ There were two main questions we needed to answer:
    show the logs for the current staging operation.
 2. What is the newest log that can be shown?
    Log Cache is eventually consistent, so very recent logs may be out of order
-   or incomplete. We would only want to show the logs that have "settled" (i.e.
+   or incomplete. We would only want to show logs once they have "settled" (i.e.
    logs that have been in Log Cache long enough to converge).
+
+We also needed to answer a question regarding `cf logs --recent`:
+
+3. Do we want to define a range of "settled" logs to show, or do we want to show everything currently in the Log Cache?
 
 ## Decision
 
 _The change that we're proposing or have agreed to implement._
 
 1. To determine the oldest log that will be shown: we will 'peek' at the latest log within
-   Log Cache for the application and read from that point (applying a small offset).
+   Log Cache for the application and read from that point.
 2. To determine the newest log that will be shown: we will not show log envelopes where the
    timestamp is less than two seconds old.
+3. `cf logs --recent` will always show all logs currently in the Log Cache, regardless of whether they have "settled".
 
 ### 1. Peeking at the latest log
 
@@ -53,14 +58,10 @@ incorrectly configured client clock would result in some unexpected behaviour:
 
 In an attempt to decouple ourselves from the client clock time we instead 'peek'
 at the timestamp of the latest log envelope for the application and use that
-timestamp (plus a small offset) as our starting point.
-
-XXX: Describe how we arrived at the offset
+timestamp as our starting point.
 
 If there are no envelopes present for the application we will continue to retry
 until envelopes become available.
-
-XXX: Consider if we are retrying on an empty response from Log Cache without a delay.
 
 ### 2. Delaying the output of new logs
 
@@ -78,6 +79,17 @@ https://www.pivotaltracker.com/story/show/171759407/comments/212391238.
 
 We decided to increase the `WalkDelay` to 2 seconds to give Log cache more time
 to "settle" in a multiple Log Cache node foundation.
+
+Note: an issue has been filed against the Log Cache client to increase the default
+walk delay: https://github.com/cloudfoundry/go-log-cache/issues/29
+
+### 3. `cf logs --recent` behavior
+
+We decided to implement `cf logs --recent` using a single request to Log Cache instead of a multiple pass
+`Walk` implementation. This has better performance but means that there is no `WalkDelay` (i.e. the latest
+logs returned by the request may not be "settled"). There were three options we considered to address this:
+
+# TODO:
 
 ## Consequences
 
